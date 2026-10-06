@@ -1,4 +1,5 @@
 import { DCS_BASE_URL, DCS_MODEL } from '../runtime/translation-child.ts';
+import { installRuntime, selectRuntime, cancelRuntimeSetup } from './runtime-setup.ts';
 
 export type ApiProtocol = 'responses' | 'chat';
 export interface ApiProfile { id: string; name: string; protocol: ApiProtocol; baseUrl: string; model: string; models: string[]; }
@@ -178,20 +179,62 @@ export function mountProviderSettings(host: any): void {
   const actions = html('div'); actions.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;'; body.append(actions);
   let busy = false;
   const errors: Record<string, string> = { SECRET_STORE_UNAVAILABLE: 'Zotero 密码存储暂不可用，未把 Key 写入普通配置。', INVALID_API_KEY: '请填写有效 Key。',
+    RUNTIME_MISSING: '此目录不是可用翻译环境，请选择包含 runtime/python 和 runtime/libs 的根目录。',
+    INSTALL_UNSUPPORTED: '自动安装目前支持 Windows x64。', INSTALL_BUSY: '已有环境安装正在进行。',
+    INSTALL_DIR_UNOWNED: '该位置的 OrangeTranslateRuntime 文件夹已包含其他内容，请换一个安装位置。',
+    DOWNLOAD_FAILED: '下载失败，请检查网络后重试。', DOWNLOAD_HASH_MISMATCH: '下载文件校验失败，请重新安装。',
+    PYTHON_INSTALL_FAILED: 'Python 下载或安装失败，请检查网络和空间后重试。',
+    ENGINE_INSTALL_FAILED: '翻译引擎安装失败，请检查网络和空间后重试。',
+    ASSETS_INSTALL_FAILED: '字体或模型下载失败，请检查网络后重试安装。',
+    INSTALL_FAILED: '环境安装失败。安装目录中的 installer.log 保留了错误详情。',
+    INSTALL_CANCELLED: '安装已取消，可在相同位置重试。', INSTALL_TIMEOUT: '安装超过 45 分钟，已停止，可重试。',
     INVALID_WORKER_COUNT: '线程数必须是 1 到 64 的整数。',
     INVALID_PROFILE: '请填写名称、接口地址及模型 ID。', INVALID_ENDPOINT: '接口需要 HTTPS；本机服务可使用 localhost 的 HTTP。', CREDENTIAL_IN_URL: '接口地址不能包含账号、密码、查询参数或片段。',
     HTTP_401: '认证失败，请检查 API Key。', HTTP_403: '该 Key 没有访问权限。', HTTP_404: '接口或模型不存在；不支持拉取模型时可手填模型 ID。', HTTP_429: '接口限流，请稍后重试。',
     MODELS_UNAVAILABLE: '此接口未提供标准模型列表，请手动填写模型 ID。', INVALID_API_RESPONSE: '接口未返回预期格式，请检查协议和模型。', API_CONNECTION_FAILED: '连接失败或超时，请检查地址和网络。' };
-  const button = (label: string, action: () => any) => {
+  const button = (label: string, action: () => any, container = actions) => {
     const el = html('button', label); el.type = 'button';
     el.addEventListener('click', async () => {
       if (busy) { return; }
       busy = true;
-      for (const control of body.querySelectorAll('button,input,select,textarea')) { control.disabled = true; }
-      try { await action(); } catch (error: any) { notice.textContent = errors[String(error?.message)] || '操作未完成，请检查配置。'; }
-      finally { busy = false; for (const control of body.querySelectorAll('button,input,select,textarea')) { control.disabled = false; } }
-    }); actions.append(el);
+      for (const control of body.querySelectorAll('button:not([data-install-cancel]),input,select,textarea')) { control.disabled = true; }
+      try { await action(); } catch (error: any) {
+        const text = errors[String(error?.message)] || '操作未完成，请检查配置。';
+        notice.textContent = text;
+        if (container !== actions) { runtimeNotice.textContent = text; }
+      }
+      finally { busy = false; for (const control of body.querySelectorAll('button:not([data-install-cancel]),input,select,textarea')) { control.disabled = false; } }
+    }); container.append(el);
   };
+  const runtime = html('section');
+  runtime.append(html('h2', '本地翻译环境'));
+  const location = html('p'); location.style.cssText = 'overflow-wrap:anywhere;';
+  const refreshLocation = () => { location.textContent = '当前目录：' + (host.Services.prefs.getStringPref('extensions.orange-translate.runtimeRoot', '') || '尚未安装或选择'); };
+  refreshLocation(); runtime.append(location);
+  runtime.append(html('p', '首次使用：点击安装并选择位置，程序会联网下载 Python、翻译引擎、字体和模型，建议预留 3 GB 空间。安装期间保持此窗口打开。已有便携环境可直接选择。'));
+  const runtimeActions = html('div'); runtimeActions.style.cssText = actions.style.cssText; runtime.append(runtimeActions);
+  const runtimeNotice = html('p'); runtimeNotice.setAttribute('role', 'status'); runtimeNotice.setAttribute('aria-live', 'polite');
+  runtimeNotice.style.cssText = 'white-space:pre-line;overflow-wrap:anywhere;'; runtime.append(runtimeNotice);
+  const cancelInstall = html('button', '取消安装'); cancelInstall.type = 'button'; cancelInstall.disabled = true;
+  cancelInstall.setAttribute('data-install-cancel', 'true');
+  cancelInstall.addEventListener('click', async () => {
+    cancelInstall.disabled = true;
+    try { await cancelRuntimeSetup(); } catch { runtimeNotice.textContent = '停止安装失败，请关闭设置窗口后重试。'; }
+  });
+  button('安装翻译环境（选择安装位置）', async () => {
+    cancelInstall.disabled = false;
+    try {
+      const path = await installRuntime(host, text => { runtimeNotice.textContent = text; });
+      if (path) { refreshLocation(); runtimeNotice.textContent = '安装完成，可以配置 API 并开始翻译。'; }
+    } finally { cancelInstall.disabled = true; }
+  }, runtimeActions);
+  button('选择已有环境', async () => {
+    const path = await selectRuntime(host);
+    if (path) { refreshLocation(); runtimeNotice.textContent = '已选择已有环境，下一次翻译生效。'; }
+  }, runtimeActions);
+  runtimeActions.append(cancelInstall);
+  runtime.append(html('p', '译文自动保存在原 PDF 所在文件夹：中英对照版（.zh.dual.pdf）和纯中文版（.zh.mono.pdf），两份都会添加到 Zotero。已有同名文件时自动编号，保留原文和旧译文。'));
+  body.insertBefore(runtime, body.firstChild);
   const credential = async (profile: ApiProfile) => { const value = key.value.trim() || await readApiKey(profile, host); if (!value) { throw new Error('INVALID_API_KEY'); } return value; };
   button('保存线程数', () => {
     savePoolMaxWorkers(Number(workers.value), host);

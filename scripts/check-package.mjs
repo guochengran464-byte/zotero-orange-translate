@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { crc32, inflateRawSync } from 'node:zlib';
 
 var ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-var DEFAULT_XPI = path.join(ROOT, 'dist', 'orange-translate-1.0.0.xpi');
+var DEFAULT_XPI = path.join(ROOT, 'dist', 'orange-translate-1.1.0.xpi');
 var MAX_XPI_BYTES = 5 * 1024 * 1024;
 var REQUIRED_ENTRIES = ['manifest.json', 'bootstrap.js', 'prefs.js', 'lifecycle.js', 'api-prefs.xhtml', 'api-prefs.js', 'icon.png'];
 var FORBIDDEN_PATTERNS = [
@@ -208,7 +208,7 @@ export function checkArtifact(buf) {
   }
   if (manifestOk) {
     if (manifest.manifest_version !== 2) { errors.push('manifest_version must be 2'); }
-    if (manifest.version !== '1.0.0') { errors.push('version must be 1.0.0'); }
+    if (manifest.version !== '1.1.0') { errors.push('version must be 1.1.0'); }
     if (manifest.name !== 'Orange Translate') {
       errors.push('name must be "Orange Translate"');
     }

@@ -26,7 +26,7 @@ import * as esbuild from 'esbuild';
 
 var ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 var DEFAULT_LIFECYCLE = path.join(ROOT, 'src', 'zotero', 'lifecycle.ts');
-var DEFAULT_OUT = path.join(ROOT, 'dist', 'orange-translate-1.0.0.xpi');
+var DEFAULT_OUT = path.join(ROOT, 'dist', 'orange-translate-1.1.0.xpi');
 
 // --- Opt-in test package build (M2-REAL-0) -----------------------------------
 //

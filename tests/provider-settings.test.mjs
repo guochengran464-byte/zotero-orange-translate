@@ -14,7 +14,7 @@ test('settings pane initializes from captured native load without inline handler
       addEventListener(type, handler, capture, wantsUntrusted) { assert.equal(type, 'load'); assert.equal(capture, true); assert.equal(wantsUntrusted, true); listener = handler; },
       removeEventListener(type, handler, capture) { assert.equal(handler, listener); assert.equal(capture, true); removed = true; } },
       addEventListener() { assert.fail('element load cannot reach window'); } };
-    vm.runInNewContext(script, { window: win, Services: {}, Components: {}, Zotero: { logError() {} },
+    vm.runInNewContext(script, { window: win, Services: {}, Components: {}, ChromeUtils: {}, IOUtils: {}, PathUtils: {}, Zotero: { logError() {} },
       OrangeTranslateLifecycle: { mountProviderSettings(host) { if (fail) { throw new Error('failure'); } mounted = host; } } });
     listener({ target: { id: 'another-pane' } }); assert.equal(removed, false);
     listener({ target: root }); assert.equal(removed, true);

@@ -3,7 +3,8 @@ import { PowershellBridge } from '../runtime/powershell-bridge.ts';
 import { TRANSLATION_CHILD_SCRIPT } from '../runtime/translation-child.ts';
 import { readApiSettings, readApiKey, apiSecretScope, readPoolMaxWorkers } from './provider-settings.ts';
 import { createSubprocessPort, createHostClock } from './subprocess-host.ts';
-import { assertImportTarget, importTranslatedPdf } from './result-importer.ts';
+import { assertImportTarget, assertOutputFolder, saveTranslatedPdfs, importTranslatedPdf } from './result-importer.ts';
+import { resolveRuntime } from './runtime-setup.ts';
 
 const sessionKeys = new Map<string, string>();
 // ponytail: one translation per Zotero session; add a queue only if batch work is needed.
@@ -82,13 +83,9 @@ export async function translatePdf(candidate: PdfCandidate, host: any): Promise<
   };
   try {
     assertImportTarget(Zotero, candidate);
-    const runtimeRoot = Services.prefs.getStringPref('extensions.orange-translate.runtimeRoot', 'F:\\pdf2zh\\build\\PDF翻译器');
-    const python = PathUtils.join(runtimeRoot, 'runtime', 'python', 'python.exe');
-    const libs = PathUtils.join(runtimeRoot, 'runtime', 'libs');
-    if (!localFile(python).exists() || !localFile(PathUtils.join(libs, 'pdf2zh_next', 'main.py')).exists()) {
-      throw new Error('RUNTIME_MISSING');
-    }
-    jobsRoot = Services.prefs.getStringPref('extensions.orange-translate.jobsRoot', 'D:\\Orange Translate-jobs');
+    assertOutputFolder(host, candidate);
+    const { root: runtimeRoot, python, libs, models: modelsRoot } = resolveRuntime(host);
+    jobsRoot = Services.prefs.getStringPref('extensions.orange-translate.jobsRoot', '') || PathUtils.join(runtimeRoot, 'jobs');
     mkdir(localFile(jobsRoot));
     outputDir = PathUtils.join(jobsRoot, jobId);
     const settings = readApiSettings(host);
@@ -98,7 +95,7 @@ export async function translatePdf(candidate: PdfCandidate, host: any): Promise<
     credentialScope = apiSecretScope(profile);
     if (!Services.prompt.confirm(win, 'Orange Translate',
       '将通过 ' + profile.name + '（' + model + '）翻译所选 PDF，发送待翻译文本并可能产生 API 费用。\n接口：' + profile.baseUrl
-      + (profile.protocol === 'responses' ? '/responses' : '/chat/completions') + '\n完成后自动添加双语附件。\n\n开始翻译？')) { return; }
+      + (profile.protocol === 'responses' ? '/responses' : '/chat/completions') + '\n完成后在原 PDF 所在文件夹保存中英对照和纯中文版，并添加两个附件。\n\n开始翻译？')) { return; }
     let apiKey = sessionKeys.get(credentialScope) || '';
     try { apiKey = await readApiKey(profile, host) || apiKey; } catch {}
     if (!apiKey) {
@@ -122,7 +119,7 @@ export async function translatePdf(candidate: PdfCandidate, host: any): Promise<
       subprocess: createSubprocessPort({ call: (options: any) => native.call({ ...options,
         environmentAppend: true, environment: {
           ORANGE_PYTHON_EXE: python, ORANGE_LIBS_ROOT: libs, ORANGE_CACHE_ROOT: cacheRoot,
-          ORANGE_MODELS_ROOT: PathUtils.join(runtimeRoot, 'models', 'babeldoc'),
+          ORANGE_MODELS_ROOT: modelsRoot,
           ORANGE_API_BASE_URL: profile.baseUrl, ORANGE_API_PROTOCOL: profile.protocol,
           ORANGE_POOL_MAX_WORKERS: String(poolMaxWorkers),
           TEMP: cacheRoot, TMP: cacheRoot,
@@ -230,26 +227,30 @@ export async function translatePdf(candidate: PdfCandidate, host: any): Promise<
     }
     if (job.cancelled || result.status === 'cancelled') { progress.close(); alert('翻译已取消，未添加附件。'); return; }
     if (result.status !== 'completed') { throw new Error(result.error?.code || 'TRANSLATION_FAILED'); }
-    if (!result.outputs.dualPdf) { throw new Error('MISSING_REQUIRED_OUTPUT'); }
+    if (!result.outputs.dualPdf || !result.outputs.monoPdf) { throw new Error('MISSING_REQUIRED_OUTPUT'); }
     translated = true;
     let unchanged = false;
     try { unchanged = digest(candidate.absolutePath!) === originalDigest; } catch {}
     if (!unchanged) { throw new Error('SOURCE_CHANGED'); }
     job.importing = true;
     stage = 'IMPORTING';
-    progress.changeHeadline('Orange Translate：正在添加双语附件');
-    const attachment = await importTranslatedPdf(Zotero, candidate, result.outputs.dualPdf);
+    progress.changeHeadline('Orange Translate：正在保存译文和添加附件');
+    const saved = await saveTranslatedPdfs(host, candidate, result.outputs);
+    await importTranslatedPdf(Zotero, candidate, saved.dualPdf, 'dual', true);
+    await importTranslatedPdf(Zotero, candidate, saved.monoPdf, 'mono', true);
     progress.changeHeadline('Orange Translate：翻译完成');
-    meter.value = 100; percent.textContent = '100% · 双语 PDF 已回挂';
-    progress.addDescription('双语 PDF 已添加为 Zotero 附件。');
+    meter.value = 100; percent.textContent = '100% · 中英对照和纯中文 PDF 已回挂';
+    progress.addDescription('两份译文已保存在原 PDF 旁边，并添加为 Zotero 附件。');
     progress.startCloseTimer(5000);
-    alert('翻译完成，双语 PDF 已添加到文献下。\n附件：' + attachment.getField('title'));
+    alert('翻译完成，中英对照和纯中文 PDF 已添加到文献下。\n保存位置：' + localFile(candidate.absolutePath!).parent.path);
   }
   catch (error: any) {
     const rawCode = String(error?.message || 'INTERNAL_ERROR');
     const code = /^[A-Z][A-Z0-9_]{1,63}$/.test(rawCode) ? rawCode : 'INTERNAL_ERROR';
     const messages: Record<string, string> = {
-      RUNTIME_MISSING: '找不到原翻译环境。请检查插件配置的 runtimeRoot 路径。',
+      RUNTIME_MISSING: '尚未配置翻译环境。请打开 Zotero 设置 → Orange Translate，点击“安装翻译环境”或“选择已有环境”。',
+      OUTPUT_FOLDER_READ_ONLY: '原 PDF 所在文件夹不可写。请移到可写位置后再翻译。',
+      OUTPUT_SAVE_FAILED: '无法在原 PDF 旁边保存译文，请检查目录权限和剩余空间。',
       RUNTIME_INCOMPATIBLE: '原翻译环境无法运行，请检查 Python 与翻译依赖。',
       LIBRARY_READ_ONLY: '当前文献库没有附件写入权限。',
       SOURCE_CHANGED: '原文或文献位置发生变化，未自动回挂。',

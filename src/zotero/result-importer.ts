@@ -17,14 +17,48 @@ export function assertImportTarget(zotero: any, candidate: PdfCandidate): any {
   return null;
 }
 
-export async function importTranslatedPdf(zotero: any, candidate: PdfCandidate, dualPdf: string): Promise<any> {
+export function assertOutputFolder(host: any, candidate: PdfCandidate): any {
+  const source = host.Zotero.File.pathToFile(candidate.absolutePath);
+  const folder = source.parent;
+  if (!folder?.exists() || !folder.isDirectory() || !folder.isWritable()) { throw new Error('OUTPUT_FOLDER_READ_ONLY'); }
+  return source;
+}
+
+export async function saveTranslatedPdfs(host: any, candidate: PdfCandidate, outputs: { dualPdf?: string; monoPdf?: string }): Promise<{ dualPdf: string; monoPdf: string }> {
+  if (!outputs.dualPdf || !outputs.monoPdf) { throw new Error('MISSING_REQUIRED_OUTPUT'); }
+  const source = assertOutputFolder(host, candidate);
+  const stem = source.leafName.replace(/\.pdf$/i, '');
+  for (let index = 1; index <= 9999; index++) {
+    const suffix = '.zh' + (index === 1 ? '' : '-' + index);
+    const dualPdf = host.PathUtils.join(source.parent.path, stem + suffix + '.dual.pdf');
+    const monoPdf = host.PathUtils.join(source.parent.path, stem + suffix + '.mono.pdf');
+    if ([dualPdf, monoPdf].some(path => host.Zotero.File.pathToFile(path).exists())) { continue; }
+    let copied = false;
+    try {
+      await host.IOUtils.copy(outputs.dualPdf, dualPdf, { noOverwrite: true }); copied = true;
+      await host.IOUtils.copy(outputs.monoPdf, monoPdf, { noOverwrite: true });
+      return { dualPdf, monoPdf };
+    } catch {
+      if (copied) { try { await host.IOUtils.remove(dualPdf); } catch {} }
+      throw new Error('OUTPUT_SAVE_FAILED');
+    }
+  }
+  throw new Error('OUTPUT_SAVE_FAILED');
+}
+
+export async function importTranslatedPdf(zotero: any, candidate: PdfCandidate, pdf: string, kind: 'dual' | 'mono' = 'dual', link = false): Promise<any> {
   const parent = assertImportTarget(zotero, candidate);
-  return zotero.Attachments.importFromFile({
-    file: dualPdf,
+  const personal = zotero.Libraries.get(candidate.libraryID)?.libraryType === 'user'
+    || zotero.Libraries.userLibraryID === candidate.libraryID;
+  const options = {
+    file: pdf,
     libraryID: candidate.libraryID,
     parentItemID: parent?.id,
     collections: parent ? undefined : zotero.Items.get(candidate.attachmentID).getCollections(),
-    title: '中英双语 · ' + candidate.fileName,
+    title: (kind === 'dual' ? '中英双语 · ' : '纯中文 · ') + candidate.fileName,
     contentType: 'application/pdf',
-  });
+  };
+  // Zotero group libraries cannot contain linked files. Keep the adjacent PDFs
+  // and use Zotero's managed import for those libraries.
+  return link && personal ? zotero.Attachments.linkFromFile(options) : zotero.Attachments.importFromFile(options);
 }

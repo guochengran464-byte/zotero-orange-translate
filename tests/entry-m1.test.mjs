@@ -97,11 +97,13 @@ function makeHarness(options) {
   const files = new Map(); const folders = new Set(['C:\\', 'D:\\', 'F:\\']);
   files.set(normalize('F:/pdf2zh/build/PDF翻译器/runtime/python/python.exe'), 'exe');
   files.set(normalize('F:/pdf2zh/build/PDF翻译器/runtime/libs/pdf2zh_next/main.py'), 'module');
+  files.set(normalize('F:/pdf2zh/build/PDF翻译器/runtime/libs/babeldoc/__init__.py'), 'module');
   const file = p => ({ path: normalize(p),
+    get leafName() { return path.win32.basename(p); },
     get parent() { return file(path.win32.dirname(p)); },
     exists() { return files.has(normalize(p)) || folders.has(normalize(p)); },
     isFile() { return files.has(normalize(p)); }, isDirectory() { return folders.has(normalize(p)); },
-    isReadable() { return true; }, create() { folders.add(normalize(p)); }, remove() {},
+    isReadable() { return true; }, isWritable() { return true; }, create() { folders.add(normalize(p)); }, remove() {},
     get fileSize() { return (files.get(normalize(p)) || '').length; },
     get directoryEntries() { return { hasMoreElements: () => [...files.keys()].some(k => k.startsWith(normalize(p) + '\\')) }; },
   });
@@ -125,12 +127,17 @@ function makeHarness(options) {
   var itemsByID = new Map();
   for (var entry of opts.items || []) { itemsByID.set(entry[0], entry[1]); }
   for (const item of itemsByID.values()) {
-    if (item.isPDFAttachment?.()) { files.set(normalize('C:/lib/storage/' + item.key + '/' + item.attachmentFilename), '%PDF-original'); }
+    if (item.isPDFAttachment?.()) {
+      const p = 'C:/lib/storage/' + item.key + '/' + item.attachmentFilename;
+      files.set(normalize(p), '%PDF-original'); folders.add(normalize(path.win32.dirname(p)));
+    }
   }
 
   var sandbox = {
     Components: { classes, interfaces: { nsIFile: { DIRECTORY_TYPE: 1 } } },
-    IOUtils: { writeUTF8: async (p, text) => files.set(normalize(p), text) },
+    IOUtils: { writeUTF8: async (p, text) => files.set(normalize(p), text),
+      copy: async (from, to, options) => { assert.equal(options.noOverwrite, true); assert.equal(files.has(normalize(to)), false); files.set(normalize(to), files.get(normalize(from))); },
+      remove: async p => files.delete(normalize(p)) },
     PathUtils: { join: path.win32.join },
     ChromeUtils: {
       importESModule: function (uri) {
@@ -172,7 +179,9 @@ function makeHarness(options) {
       env: { get: function () { return 'C:\\Windows'; } },
       prefs: {
         getBoolPref: function () { return opts.debugPref === true; },
-        getStringPref: function (_name, fallback) { return fallback; },
+        getStringPref: function (name, fallback) {
+          return name.endsWith('.runtimeRoot') ? 'F:\\pdf2zh\\build\\PDF翻译器' : fallback;
+        },
       },
       prompt: {
         select: function () { return false; },
@@ -322,8 +331,12 @@ test('built product resolves a PDF, transfers the credential through stdin and i
   assert.equal(h.state.frame.apiKey, 'TEST-ONLY-KEY');
   assert.ok(h.state.confirmations.some(text => text.includes('DCS') && text.includes('deepseek-v4-flash') && text.includes('/responses')));
   assert.ok(!h.state.processCalls[0].arguments.join(' ').includes('TEST-ONLY-KEY'));
-  assert.equal(h.state.imported.length, 1);
+  assert.equal(h.state.imported.length, 2);
   assert.equal(h.state.imported[0].parentItemID, 500);
+  assert.equal(h.state.imported[1].parentItemID, 500);
+  assert.equal(h.state.imported[0].file, 'C:\\lib\\storage\\A1\\study.zh.dual.pdf');
+  assert.equal(h.state.imported[1].file, 'C:\\lib\\storage\\A1\\study.zh.mono.pdf');
+  assert.match(h.state.imported[1].title, /纯中文/);
   assert.equal(h.state.panels.length, 1);
   assert.equal(h.state.panels[0].tag, 'section');
   assert.equal(h.state.panels[0].children[0].attributes.role, 'status');

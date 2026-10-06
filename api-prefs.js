@@ -5,7 +5,8 @@ window.document.addEventListener('load', function initializeOrangeTranslateSetti
   if (root.id !== 'orange-translate-api-settings') { return; }
   window.document.removeEventListener('load', initializeOrangeTranslateSettings, true);
   try {
-    OrangeTranslateLifecycle.mountProviderSettings({ win: window, root, Zotero, Services, Components });
+    OrangeTranslateLifecycle.mountProviderSettings({ win: window, root, Zotero, Services, Components,
+      ChromeUtils, IOUtils, PathUtils });
   }
   catch (error) {
     const message = window.document.createElementNS('http://www.w3.org/1999/xhtml', 'p');
