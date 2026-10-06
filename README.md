@@ -2,7 +2,7 @@
 
 Zotero PDF 翻译插件。选择文献或 PDF 后，调用本地 **PDFMathTranslate-next / BabelDOC** 翻译环境，生成双语 PDF，并自动添加为原文献的附件。
 
-**[下载 0.3.5 安装包](https://github.com/guochengran464-byte/zotero-orange-translate/raw/refs/heads/main/releases/0.3.5/orange-translate-0.3.5.xpi)** · Windows x64 / Zotero 10.x
+**[下载 1.0.0 安装包](https://github.com/guochengran464-byte/zotero-orange-translate/raw/refs/heads/main/releases/1.0.0/orange-translate-1.0.0.xpi)** · Windows x64 / Zotero 10.x
 
 ## 上游项目与原作者
 
@@ -28,7 +28,7 @@ Orange Translate 提供 Zotero 菜单、选中文献解析、本地进程连接�
 
 ## 当前支持范围
 
-当前版本 **0.3.5**。真实使用确认来自 **Windows x64 / Zotero 10.0.3**。插件包目前允许 Zotero 10.x 安装；其他 10.x 小版本仍需实际验证。Zotero 7/8/9 支持尚未交付。
+当前版本 **1.0.0**。真实使用确认来自 **Windows x64 / Zotero 10.0.3**。插件包目前允许 Zotero 10.x 安装；其他 10.x 小版本仍需实际验证。Zotero 7/8/9 支持尚未交付。
 
 每次处理一个本地英文 PDF，输出中文译文。父文献有多个 PDF 时，请直接选中目标 PDF 附件。
 
@@ -82,7 +82,7 @@ npm run build
 npm run check
 ```
 
-产物：`dist/orange-translate-0.3.5.xpi`。构建工具不需要安装到 Zotero；运行翻译时使用本地便携环境。
+产物：`dist/orange-translate-1.0.0.xpi`。构建工具不需要安装到 Zotero；运行翻译时使用本地便携环境。
 
 ## 许可证
 

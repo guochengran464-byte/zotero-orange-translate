@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Orange Translate",
-  "version": "0.3.5",
+  "version": "1.0.0",
   "icons": {
     "48": "icon.png",
     "96": "icon.png"

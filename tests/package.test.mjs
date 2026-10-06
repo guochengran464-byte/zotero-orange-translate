@@ -36,7 +36,7 @@ var FIXTURE_SOURCE = [
 var GOOD_MANIFEST = JSON.stringify({
   manifest_version: 2,
   name: 'Orange Translate',
-  version: '0.3.5',
+  version: '1.0.0',
   applications: {
     zotero: {
       id: 'orange-translate-dev@local.invalid',
@@ -273,7 +273,7 @@ test('check rejects a manifest with a non-placeholder update_url or wrong isolat
     { name: 'prefs.js', data: Buffer.from('pref("x", false);') }
   ]));
   assert.equal(report.ok, false);
-  assert.ok(report.errors.some(function (e) { return /version must be 0.3.5/.test(e); }));
+  assert.ok(report.errors.some(function (e) { return /version must be 1.0.0/.test(e); }));
   assert.ok(report.errors.some(function (e) { return /name must be/.test(e); }));
   assert.ok(report.errors.some(function (e) { return /homepage_url/.test(e); }));
   assert.ok(report.errors.some(function (e) { return /orange-translate-dev@local\.invalid/.test(e); }));

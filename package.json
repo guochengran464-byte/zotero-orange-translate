@@ -1,6 +1,6 @@
 {
   "name": "orange-translate",
-  "version": "0.3.5",
+  "version": "1.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
   "description": "Zotero bilingual PDF translation plugin powered by PDFMathTranslate-next and BabelDOC.",
