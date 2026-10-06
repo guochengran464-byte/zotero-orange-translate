@@ -1,1 +1,1 @@
-c9dfd12aeb0001b0c28ade4de2eca7ee506958f13ec85885272d56f1fbe7e7e4  orange-translate-1.1.0.xpi
+7fd667468bab014b6ad072715af610ba91c3dd70a58d37335cef620c6da9b243  orange-translate-1.1.0.xpi

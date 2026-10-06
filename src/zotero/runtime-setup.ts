@@ -50,6 +50,9 @@ export async function installRuntime(host: any, update: (text: string) => void):
     if (owned?.app !== 'Orange Translate' || owned?.schemaVersion !== 1) { throw new Error('INSTALL_DIR_UNOWNED'); }
   }
   await host.IOUtils.makeDirectory(root, { createAncestors: true, ignoreExisting: true });
+  for (const name of ['temp', 'cache', 'local-app-data', 'roaming-app-data']) {
+    await host.IOUtils.makeDirectory(host.PathUtils.join(root, name), { ignoreExisting: true });
+  }
   await host.IOUtils.writeUTF8(marker, JSON.stringify({ app: 'Orange Translate', schemaVersion: 1 }));
   const script = host.PathUtils.join(root, 'install-runtime.ps1');
   await host.IOUtils.writeUTF8(script, RUNTIME_INSTALL_SCRIPT);
@@ -72,6 +75,12 @@ export async function installRuntime(host: any, update: (text: string) => void):
       command: host.Services.env.get('SystemRoot') + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
       arguments: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Root', root],
       workdir: root, stderr: 'pipe',
+      environmentAppend: true, environment: {
+        HOME: root, USERPROFILE: root,
+        TEMP: host.PathUtils.join(root, 'temp'), TMP: host.PathUtils.join(root, 'temp'),
+        LOCALAPPDATA: host.PathUtils.join(root, 'local-app-data'), APPDATA: host.PathUtils.join(root, 'roaming-app-data'),
+        PSModuleAnalysisCachePath: host.PathUtils.join(root, 'cache', 'powershell-module-cache'),
+      },
     });
     await job.process.stdin?.close();
     if (job.cancelled) { await job.process.kill(0); }
