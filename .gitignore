@@ -1,0 +1,29 @@
+# Private original reference material is retained locally, not published
+/reference/
+node_modules/
+dist/
+build/
+coverage/
+.worktrees/
+.local/
+.runtime/
+.jobs/
+.dev-profile/
+.dev-data/
+*.log
+.env
+.env.*
+!.env.example
+**/API-settings.txt
+**/install-location.txt
+*.pdf
+*.xpi
+
+# Local archives and interpreter caches are not worktree source inputs.
+*.whl
+__pycache__/
+*.pyc
+.venv/
+
+# Published installation package
+!releases/**/*.xpi

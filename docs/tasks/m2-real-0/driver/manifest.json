@@ -1,0 +1,13 @@
+{
+  "manifest_version": 2,
+  "name": "Orange Translate M2-REAL-0 Isolated Test Driver",
+  "version": "0.0.1",
+  "applications": {
+    "zotero": {
+      "id": "orange-m2-real-0-driver@local.invalid",
+      "update_url": "https://local.invalid/updates.json",
+      "strict_min_version": "10.0.2",
+      "strict_max_version": "10.0.2"
+    }
+  }
+}

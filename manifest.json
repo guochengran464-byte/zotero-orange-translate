@@ -1,0 +1,18 @@
+{
+  "manifest_version": 2,
+  "name": "Orange Translate",
+  "version": "0.3.5",
+  "icons": {
+    "48": "icon.png",
+    "96": "icon.png"
+  },
+  "description": "Translate selected PDFs with the existing local runtime and attach bilingual results in Zotero.",
+  "applications": {
+    "zotero": {
+      "id": "orange-translate-dev@local.invalid",
+      "update_url": "https://local.invalid/updates.json",
+      "strict_min_version": "10.0",
+      "strict_max_version": "10.*"
+    }
+  }
+}
