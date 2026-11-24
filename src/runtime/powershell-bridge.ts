@@ -119,6 +119,7 @@ export interface BridgeTimeouts {
 export interface PowershellBridgeOptions {
   executablePath: string;
   childScriptPath: string;
+  pythonChild?: boolean;
   subprocess: SubprocessPort;
   files: BridgeFilePort;
   clock: BridgeClock;
@@ -316,6 +317,9 @@ function isRecord(value: unknown): value is Record<string, any> {
 }
 
 function joinLocal(dir: string, name: string): string {
+  if (dir.startsWith('/') && !dir.startsWith('//')) {
+    return dir.replace(/\/+$/, '') + '/' + name;
+  }
   const trimmed = dir.replace(/[\\/]+$/, '');
   const sep = trimmed.includes('\\') ? '\\' : '/';
   return trimmed + sep + name;
@@ -369,6 +373,7 @@ interface ActiveJob {
 export class PowershellBridge implements RuntimeAdapter {
   private readonly executablePath: string;
   private readonly childScriptPath: string;
+  private readonly pythonChild: boolean;
   private readonly subprocess: SubprocessPort;
   private readonly files: BridgeFilePort;
   private readonly clock: BridgeClock;
@@ -381,6 +386,7 @@ export class PowershellBridge implements RuntimeAdapter {
   constructor(options: PowershellBridgeOptions) {
     this.executablePath = options.executablePath;
     this.childScriptPath = options.childScriptPath;
+    this.pythonChild = options.pythonChild ?? false;
     this.subprocess = options.subprocess;
     this.files = options.files;
     this.clock = options.clock;
@@ -644,6 +650,7 @@ export class PowershellBridge implements RuntimeAdapter {
 
   /** Fixed flags plus job-scoped file paths only; never request free text. */
   private buildArguments(requestPath: string, resultPath: string): string[] {
+    if (this.pythonChild) { return [this.childScriptPath, requestPath, resultPath]; }
     return [
       '-NoProfile',
       '-NonInteractive',

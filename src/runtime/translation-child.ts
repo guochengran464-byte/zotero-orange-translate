@@ -2,7 +2,7 @@
 export const DCS_MODEL = 'deepseek-v4-flash';
 export const DCS_BASE_URL = 'https://dcsapi.dcs.cloud/api/aigress/unified/v1';
 
-export const TRANSLATION_CHILD_SCRIPT = String.raw`param([string]$RequestPath, [string]$ResultPath)
+const WINDOWS_LAUNCHER = String.raw`param([string]$RequestPath, [string]$ResultPath)
 $ErrorActionPreference = 'Stop'
 $request = $null
 function Read-Exactly($stream, [int]$count) {
@@ -31,7 +31,9 @@ try {
     $env:PYTHONUTF8 = '1'
     $env:USERPROFILE = $env:ORANGE_CACHE_ROOT
     $env:HF_ENDPOINT = 'https://hf-mirror.com'
-    $program = @'
+    $program = @'`;
+
+export const PYTHON_TRANSLATION_CHILD = String.raw`
 import contextlib, json, logging, os, shutil, sys, time, threading, hashlib
 from pathlib import Path
 
@@ -144,8 +146,25 @@ def main():
     request_path, result_path = map(Path, sys.argv[1:3])
     request = json.loads(request_path.read_text(encoding="utf-8-sig"))
     result = {"schemaVersion": 1, "jobId": request["jobId"]}
-    failure = "TRANSLATION_FAILED"
+    failure = "RUNTIME_INCOMPATIBLE"
     try:
+        if sys.platform == "darwin":
+            header = sys.stdin.buffer.read(4)
+            length = int.from_bytes(header, "big")
+            if len(header) != 4 or not 1 <= length <= 65536:
+                raise ValueError("SECRET_FRAME_INVALID")
+            payload = sys.stdin.buffer.read(length)
+            if len(payload) != length:
+                raise ValueError("SECRET_FRAME_INCOMPLETE")
+            frame = json.loads(payload.decode("utf-8"))
+            key = frame.get("apiKey")
+            if (frame.get("jobId") != request["jobId"]
+                or frame.get("providerId") != request["provider"]["id"]
+                or not isinstance(key, str) or not key):
+                raise ValueError("SECRET_FRAME_INVALID")
+            os.environ["PDF2ZH_OPENAI_API_KEY"] = key
+            del payload, frame, key
+        failure = "TRANSLATION_FAILED"
         source = Path(request["inputPdf"]).resolve()
         output = Path(request["outputDir"]).resolve()
         if not source.is_file() or not output.is_dir() or result_path.resolve().parent != output:
@@ -157,7 +176,7 @@ def main():
         models = Path(os.environ["ORANGE_MODELS_ROOT"])
         cache.mkdir(parents=True, exist_ok=True)
         # Reuse bundled assets locally; never overwrite an existing cache file.
-        if models.is_dir():
+        if models.is_dir() and models.resolve() != cache.resolve():
             for directory, _, files in os.walk(models):
                 relative = Path(directory).relative_to(models)
                 destination = cache / relative
@@ -240,12 +259,14 @@ def main():
     temporary.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
     temporary.replace(result_path)
 
-# Reinstall only the API adapter when Windows reloads this module in a worker.
+# Spawn-based multiprocessing reloads this module in the translation worker.
 if __name__ == "__mp_main__":
     install_dcs_adapter()
 elif __name__ == "__main__":
     main()
-'@
+`;
+
+export const TRANSLATION_CHILD_SCRIPT = WINDOWS_LAUNCHER + PYTHON_TRANSLATION_CHILD + String.raw`'@
     $pythonScript = Join-Path $request.outputDir 'translate.py'
     [IO.File]::WriteAllText($pythonScript, $program, (New-Object Text.UTF8Encoding($false)))
     & $env:ORANGE_PYTHON_EXE $pythonScript $RequestPath $ResultPath | Out-Null

@@ -58,16 +58,15 @@ export function requiredOutputKinds(mode: TranslationOutputMode): OutputKind[] {
 }
 
 /**
- * Normalize an absolute local path to a lowercased, slash-separated form for
- * lexical comparison only. Returns null when the input is not an absolute local
- * path or escapes above its root via '..'. Lowercasing matches Windows path
- * semantics, which is the only host this resolver targets.
+ * Normalize an absolute local path for lexical comparison. Windows drive and
+ * UNC paths fold case and separators. POSIX paths preserve case and backslashes.
  */
 export function normalizeLocalPathForCompare(input: unknown): string | null {
   if (typeof input !== 'string' || input.length === 0 || input.includes('\0')) {
     return null;
   }
-  let rest = input.replace(/\\/g, '/');
+  const windows = /^[A-Za-z]:[\\/]|^[\\]{2}|^\/\//.test(input);
+  let rest = windows ? input.replace(/\\/g, '/') : input;
   let root: string;
   if (/^[A-Za-z]:\//.test(rest)) {
     root = rest.slice(0, 2).toLowerCase() + '/';
@@ -96,7 +95,7 @@ export function normalizeLocalPathForCompare(input: unknown): string | null {
       stack.pop();
       continue;
     }
-    stack.push(segment.toLowerCase());
+    stack.push(windows ? segment.toLowerCase() : segment);
   }
   return root + stack.join('/');
 }

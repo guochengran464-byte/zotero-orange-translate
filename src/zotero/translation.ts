@@ -1,6 +1,7 @@
 import type { PdfCandidate } from '../core/resolve-pdf.ts';
 import { PowershellBridge } from '../runtime/powershell-bridge.ts';
-import { TRANSLATION_CHILD_SCRIPT } from '../runtime/translation-child.ts';
+import { PYTHON_TRANSLATION_CHILD, TRANSLATION_CHILD_SCRIPT } from '../runtime/translation-child.ts';
+import { startMacProcess } from './macos-process.ts';
 import { readApiSettings, readApiKey, apiSecretScope, readPoolMaxWorkers } from './provider-settings.ts';
 import { createSubprocessPort, createHostClock } from './subprocess-host.ts';
 import { assertImportTarget, assertOutputFolder, saveTranslatedPdfs, importTranslatedPdf } from './result-importer.ts';
@@ -84,9 +85,12 @@ export async function translatePdf(candidate: PdfCandidate, host: any): Promise<
   try {
     assertImportTarget(Zotero, candidate);
     assertOutputFolder(host, candidate);
+    const mac = Services.appinfo.OS === 'Darwin';
     const { root: runtimeRoot, python, libs, models: modelsRoot } = resolveRuntime(host);
     jobsRoot = Services.prefs.getStringPref('extensions.orange-translate.jobsRoot', '') || PathUtils.join(runtimeRoot, 'jobs');
-    mkdir(localFile(jobsRoot));
+    const jobsFolder = localFile(jobsRoot);
+    mkdir(jobsFolder);
+    if (mac) { jobsFolder.normalize(); jobsRoot = jobsFolder.path; }
     outputDir = PathUtils.join(jobsRoot, jobId);
     const settings = readApiSettings(host);
     const poolMaxWorkers = readPoolMaxWorkers(host);
@@ -108,28 +112,37 @@ export async function translatePdf(candidate: PdfCandidate, host: any): Promise<
     sessionKeys.set(credentialScope, apiKey);
     if (job.cancelled) { return; }
     const originalDigest = digest(candidate.absolutePath!);
-    const childScriptPath = PathUtils.join(jobsRoot, 'translation-child.ps1');
-    await IOUtils.writeUTF8(childScriptPath, TRANSLATION_CHILD_SCRIPT);
-    const cacheRoot = PathUtils.join(jobsRoot, 'runtime-cache');
-    mkdir(localFile(cacheRoot));
+    const childScriptPath = PathUtils.join(jobsRoot, mac ? 'translation-child.py' : 'translation-child.ps1');
+    await IOUtils.writeUTF8(childScriptPath, mac ? PYTHON_TRANSLATION_CHILD : TRANSLATION_CHILD_SCRIPT);
+    const cacheRoot = mac ? runtimeRoot : PathUtils.join(jobsRoot, 'runtime-cache');
+    const temp = mac ? PathUtils.join(cacheRoot, 'temp') : cacheRoot;
+    mkdir(localFile(temp));
     const native = ChromeUtils.importESModule('resource://gre/modules/Subprocess.sys.mjs').Subprocess;
     job.bridge = new PowershellBridge({
-      executablePath: Services.env.get('SystemRoot') + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+      executablePath: mac ? python : Services.env.get('SystemRoot') + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
       childScriptPath,
-      subprocess: createSubprocessPort({ call: (options: any) => native.call({ ...options,
-        environmentAppend: true, environment: {
+      pythonChild: mac,
+      subprocess: createSubprocessPort({ call: options => {
+        const environment = {
           ORANGE_PYTHON_EXE: python, ORANGE_LIBS_ROOT: libs, ORANGE_CACHE_ROOT: cacheRoot,
           ORANGE_MODELS_ROOT: modelsRoot,
           ORANGE_API_BASE_URL: profile.baseUrl, ORANGE_API_PROTOCOL: profile.protocol,
-          ORANGE_POOL_MAX_WORKERS: String(poolMaxWorkers),
-          USERPROFILE: cacheRoot, HOME: cacheRoot, LOCALAPPDATA: cacheRoot, APPDATA: cacheRoot,
+          ORANGE_POOL_MAX_WORKERS: String(poolMaxWorkers), HOME: cacheRoot,
           XDG_CACHE_HOME: PathUtils.join(cacheRoot, '.cache'), XDG_CONFIG_HOME: PathUtils.join(cacheRoot, 'config'),
-          HF_HOME: PathUtils.join(cacheRoot, 'huggingface'),
-          PSModuleAnalysisCachePath: PathUtils.join(cacheRoot, 'powershell-module-cache'),
-          TEMP: cacheRoot, TMP: cacheRoot,
-          PATHEXT: '.COM;.EXE;.BAT;.CMD',
-        },
-      }) }),
+          ...(mac ? {
+            HF_HOME: PathUtils.join(cacheRoot, 'cache', 'huggingface'), TMPDIR: temp,
+            PYTHONPATH: libs, PYTHONHOME: null, VIRTUAL_ENV: null, PYTHONDONTWRITEBYTECODE: '1', PYTHONUTF8: '1',
+            PDF2ZH_OPENAI_API_KEY: null,
+          } : {
+            USERPROFILE: cacheRoot, LOCALAPPDATA: cacheRoot, APPDATA: cacheRoot,
+            HF_HOME: PathUtils.join(cacheRoot, 'huggingface'),
+            PSModuleAnalysisCachePath: PathUtils.join(cacheRoot, 'powershell-module-cache'),
+            TEMP: temp, TMP: temp, PATHEXT: '.COM;.EXE;.BAT;.CMD',
+          }),
+        };
+        const launch = { ...options, environmentAppend: true, environment };
+        return mac ? startMacProcess(native, launch) : native.call(launch);
+      } }),
       files: {
         isFreshDirectory: path => { const f = localFile(path); return !f.exists() || (f.isDirectory() && !f.directoryEntries.hasMoreElements()); },
         mkdirp: path => mkdir(localFile(path)), writeText, readText,

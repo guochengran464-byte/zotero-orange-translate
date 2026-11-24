@@ -242,6 +242,13 @@ describe('path containment helpers', () => {
     assert.equal(isPathContained('C:/work/out', 'C:/work/outside.pdf'), false);
   });
 
+  it('compares POSIX paths without folding case or treating backslashes as separators', () => {
+    assert.equal(isPathContained('/tmp/Out', '/tmp/Out/译文.pdf'), true);
+    assert.equal(isPathContained('/tmp/Out', '/tmp/out/译文.pdf'), false);
+    assert.equal(isPathContained('/tmp/Out', '/tmp/Out\\译文.pdf'), false);
+    assert.equal(isPathContained('/tmp/Out\\Folder', '/tmp/Out\\Folder/译文.pdf'), true);
+  });
+
   it('rejects the parent directory itself, including the drive root', () => {
     // Regression: outputDir 'C:/' used to treat candidate 'C:/' as contained.
     assert.equal(isPathContained('C:/', 'C:/'), false);

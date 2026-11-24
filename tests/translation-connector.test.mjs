@@ -2,14 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { TRANSLATION_CHILD_SCRIPT } from '../src/runtime/translation-child.ts';
+import { PYTHON_TRANSLATION_CHILD, TRANSLATION_CHILD_SCRIPT } from '../src/runtime/translation-child.ts';
 import { encodeSecretFrame } from '../src/runtime/powershell-bridge.ts';
 import { assertImportTarget, importTranslatedPdf } from '../src/zotero/result-importer.ts';
 
-test('native PowerShell/Python adapter handles Unicode paths and keeps the key out of files and output', () => {
-  const root = mkdtempSync(path.resolve('.local/tmp/connector-中文 空格-'));
+const mac = process.platform === 'darwin';
+
+test('native translation adapter handles Unicode paths and keeps the key out of files and output', {
+  skip: !mac && process.platform !== 'win32',
+}, t => {
+  const temp = path.resolve('.local/tmp');
+  mkdirSync(temp, { recursive: true });
+  const root = realpathSync(mkdtempSync(path.join(temp, 'connector-中文 空格-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
   const job = path.join(root, 'job');
   const libs = path.join(root, 'libs');
   mkdirSync(job); mkdirSync(path.join(libs, 'pdf2zh_next'), { recursive: true });
@@ -103,7 +110,7 @@ def cli():
     process.join(8)
     if process.is_alive():
         process.kill(); process.join()
-    assert process.exitcode == 0, 'Windows translation worker failed'
+    assert process.exitcode == 0, 'translation worker failed'
     import asyncio
     import pdf2zh_next.high_level as high_level
     async def consume():
@@ -116,20 +123,32 @@ def cli():
   const request = { schemaVersion: 1, jobId: '11111111-1111-4111-8111-111111111111',
     inputPdf: source, outputDir: job, provider: { id: 'deepseek', model: 'deepseek-v4-flash' }, outputMode: 'both' };
   const requestPath = path.join(job, 'request.json'), resultPath = path.join(job, 'result.json');
-  const script = path.join(root, 'translation-child.ps1');
-  writeFileSync(script, TRANSLATION_CHILD_SCRIPT);
+  const script = path.join(root, mac ? 'translation-child.py' : 'translation-child.ps1');
+  writeFileSync(script, mac ? PYTHON_TRANSLATION_CHILD : TRANSLATION_CHILD_SCRIPT);
   writeFileSync(requestPath, JSON.stringify(request));
-  const env = { SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR,
-    PATHEXT: '.COM;.EXE;.BAT;.CMD',
-    TEMP: root, TMP: root, USERPROFILE: root,
-    ORANGE_PYTHON_EXE: 'F:/pdf2zh/build/PDF翻译器/runtime/python/python.exe',
-    ORANGE_LIBS_ROOT: libs, ORANGE_CACHE_ROOT: path.join(root, 'cache'), ORANGE_MODELS_ROOT: path.join(root, 'no-models') };
-  const stdout = execFileSync(path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe'),
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script,
-      '-RequestPath', requestPath, '-ResultPath', resultPath], {
-      env, input: Buffer.from(encodeSecretFrame({ jobId: request.jobId, providerId: 'deepseek', apiKey: 'TEST-ONLY-KEY' })),
+  const legacyPython = 'F:/pdf2zh/build/PDF翻译器/runtime/python/python.exe';
+  const python = process.env.ORANGE_TEST_PYTHON || (mac ? '/usr/bin/python3'
+    : existsSync(legacyPython) ? legacyPython
+      : execFileSync('python', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' }).trim());
+  const interpreter = mac ? python : path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
+  const env = {
+    ...(mac ? { HOME: root, TMPDIR: root, PYTHONPATH: libs, PYTHONUTF8: '1' } : {
+      SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      TEMP: root, TMP: root, USERPROFILE: root, ORANGE_PYTHON_EXE: python,
+    }),
+    ORANGE_LIBS_ROOT: libs, ORANGE_CACHE_ROOT: path.join(root, 'cache'), ORANGE_MODELS_ROOT: path.join(root, 'no-models'),
+  };
+  const run = (inputPath, outputPath, providerId = 'deepseek', extraEnv = {}) => {
+    const args = mac ? [script, inputPath, outputPath]
+      : ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script,
+        '-RequestPath', inputPath, '-ResultPath', outputPath];
+    return execFileSync(interpreter, args, {
+      env: { ...env, ...extraEnv },
+      input: Buffer.from(encodeSecretFrame({ jobId: request.jobId, providerId, apiKey: 'TEST-ONLY-KEY' })),
       encoding: 'utf8', timeout: 30_000, windowsHide: true,
     });
+  };
+  const stdout = run(requestPath, resultPath);
   const rawResult = readFileSync(resultPath, 'utf8'), result = JSON.parse(rawResult);
   assert.equal(result.status, 'completed', stdout); assert.equal(result.jobId, request.jobId);
   assert.ok(result.outputs.dualPdf.endsWith('.dual.pdf'));
@@ -143,7 +162,9 @@ def cli():
   assert.equal(engine.stage, 'FINISHED');
   assert.equal(engine.jobId, request.jobId);
   assert.equal(stdout.includes('TEST-ONLY-KEY'), false);
-  for (const file of [requestPath, script, path.join(job, 'translate.py'), resultPath, progressPath, enginePath]) {
+  const artifacts = [requestPath, script, resultPath, progressPath, enginePath];
+  if (!mac) { artifacts.push(path.join(job, 'translate.py')); }
+  for (const file of artifacts) {
     assert.equal(readFileSync(file, 'utf8').includes('TEST-ONLY-KEY'), false);
   }
   assert.equal(createHash('sha256').update(readFileSync(source)).digest('hex'), before);
@@ -152,27 +173,17 @@ def cli():
   const partialRequest = path.join(partialJob, 'request.json');
   const partialResult = path.join(partialJob, 'result.json');
   writeFileSync(partialRequest, JSON.stringify({ ...request, outputDir: partialJob }));
-  execFileSync(path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe'),
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script,
-      '-RequestPath', partialRequest, '-ResultPath', partialResult], {
-      env: { ...env, ORANGE_FAKE_WORKER_FAILURE: '1' },
-      input: Buffer.from(encodeSecretFrame({ jobId: request.jobId, providerId: 'deepseek', apiKey: 'TEST-ONLY-KEY' })),
-      encoding: 'utf8', timeout: 30_000, windowsHide: true,
-    });
+  run(partialRequest, partialResult, 'deepseek', { ORANGE_FAKE_WORKER_FAILURE: '1' });
   const failed = JSON.parse(readFileSync(partialResult, 'utf8'));
   assert.equal(failed.status, 'failed');
   assert.equal(failed.error.code, 'PROVIDER_UNREACHABLE', 'engine swallowing a paragraph error must not report a successful PDF');
   const chatJob = path.join(root, 'chat-job'); mkdirSync(chatJob);
   const chatRequest = path.join(chatJob, 'request.json'), chatResult = path.join(chatJob, 'result.json');
   writeFileSync(chatRequest, JSON.stringify({ ...request, provider: { id: 'custom-profile', model: request.provider.model }, outputDir: chatJob }));
-  execFileSync(path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe'),
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script,
-      '-RequestPath', chatRequest, '-ResultPath', chatResult], {
-      env: { ...env, ORANGE_API_PROTOCOL: 'chat', ORANGE_API_BASE_URL: 'https://compat.example/v1' },
-      input: Buffer.from(encodeSecretFrame({ jobId: request.jobId, providerId: 'custom-profile', apiKey: 'TEST-ONLY-KEY' })),
-      encoding: 'utf8', timeout: 30_000, windowsHide: true,
-    });
+  run(chatRequest, chatResult, 'custom-profile', { ORANGE_API_PROTOCOL: 'chat', ORANGE_API_BASE_URL: 'https://compat.example/v1' });
   assert.equal(JSON.parse(readFileSync(chatResult, 'utf8')).status, 'completed');
+  run(chatRequest, chatResult, 'wrong-profile');
+  assert.equal(JSON.parse(readFileSync(chatResult, 'utf8')).error.code, 'RUNTIME_INCOMPATIBLE');
 });
 
 test('importer preserves parent/library identity and standalone collections; changed/read-only targets are rejected', async () => {

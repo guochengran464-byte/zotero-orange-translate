@@ -2,7 +2,7 @@
 
 Zotero PDF 翻译插件。选择文献或 PDF 后，调用本地 **PDFMathTranslate-next / BabelDOC** 翻译环境，生成中英对照和纯中文 PDF，保存到原文旁边，并添加为原文献的附件。
 
-**[下载 1.1.0 安装包](https://github.com/guochengran464-byte/zotero-orange-translate/raw/refs/heads/main/releases/1.1.0/orange-translate-1.1.0.xpi)** · Windows x64 / Zotero 10.x
+**[下载 Orange Translate 1.2.0](https://github.com/guochengran464-byte/zotero-orange-translate/releases/download/v1.2.0/orange-translate-1.2.0.xpi)** · Zotero 10.x · Apple Silicon Mac（arm64）和 Windows x64。发布说明和 SHA-256 校验文件见 [v1.2.0 Release](https://github.com/guochengran464-byte/zotero-orange-translate/releases/tag/v1.2.0)。
 
 ## 上游项目与原作者
 
@@ -30,7 +30,7 @@ Orange Translate 提供 Zotero 菜单、选中文献解析、本地进程连接�
 
 ## 当前支持范围
 
-当前版本 **1.1.0**。此前的翻译与设置功能已由用户在 **Windows x64 / Zotero 10.0.3** 使用确认；本版新增安装器已在独立 Windows 目录完成真实安装，双输出与回挂流程通过本地检查，新增 Zotero 界面仍需安装后确认。插件包允许 Zotero 10.x 安装；其他 10.x 小版本仍需实际验证。Zotero 7/8/9 支持尚未交付。
+**1.2.0** 面向 **Windows x64** 和 **Apple Silicon Mac（arm64）**，插件包允许 Zotero 10.x 安装。Mac 端已在 Zotero 10.0.9 实测环境安装、取消后重试、双 PDF 输出和附件回挂。Windows 的实机验证记录来自 [1.1.0](https://github.com/guochengran464-byte/zotero-orange-translate/releases/tag/v1.1.0)。
 
 每次处理一个本地英文 PDF，输出中文译文。父文献有多个 PDF 时，请直接选中目标 PDF 附件。
 
@@ -39,13 +39,13 @@ XPI 不内置 Python、引擎、字体和版面模型；首次点击安装后按
 ## 安装与配置
 
 1. 下载对应版本的 `orange-translate-<version>.xpi`。
-2. Zotero → 工具 → 插件 → 从文件安装插件，选择 XPI，然后完全退出并重启 Zotero。
+2. Zotero → **工具 → 插件**，点击插件管理器右上角的齿轮，选择 **Install Plugin From File…**，打开 XPI。在插件管理器里确认 Orange Translate 已启用。
 3. Zotero 设置 → Orange Translate → **安装翻译环境（选择安装位置）**，选择一个有写入权限的文件夹，建议预留 3 GB。插件在其中创建 `OrangeTranslateRuntime`，所有下载、运行环境、任务和缓存默认放在这里。保持设置窗口打开，直到显示安装完成。
 4. 已有匹配便携环境时，点击 **选择已有环境**，选择包含 `runtime` 的根目录，无需再次下载。
 5. 填写 Base URL、协议、API Key 和模型，点击 **保存并设为当前**。需要调整线程数时，填写 **翻译线程数**，点击 **保存线程数**。
 6. 右键文献或 PDF → Orange Translate → 翻译 PDF。
 
-安装过程显示下载工具、Python、引擎及字体/模型等阶段，可点击 **取消安装**。网络失败后在相同位置重试；详情保留在所选环境目录的 `installer.log`。关闭设置窗口会停止安装。
+安装过程显示下载工具、Python、引擎及字体/模型等阶段，可点击 **取消安装**。遇到字体或模型下载超时时，在相同位置重试即可复用已下载的文件；错误详情见环境目录的 `installer.log`。保持设置窗口打开，直到显示安装完成。
 
 ### 译文保存位置
 
@@ -57,17 +57,7 @@ XPI 不内置 Python、引擎、字体和版面模型；首次点击安装后按
 
 ### 本地翻译环境路径
 
-环境选择与安装都在插件设置中完成。已有便携环境需满足：
-
-```text
-<runtimeRoot>/
-  runtime/python/python.exe
-  runtime/libs/pdf2zh_next/
-  runtime/libs/babeldoc/
-  models/babeldoc/
-```
-
-自动安装的 Python 位于 `runtime/python/Scripts/python.exe`，模型位于 `.cache/babeldoc/`。不需要手工安装 Node.js 或配置 Python。
+选择已有环境时，打开包含 `runtime` 的根目录。Python 在 macOS 上位于 `runtime/python/bin/python`，在 Windows 上位于 `runtime/python/Scripts/python.exe` 或 `runtime/python/python.exe`。两端的引擎都位于 `runtime/libs/`，自动下载的模型和字体位于 `.cache/babeldoc/`。
 
 高级用户还可通过 Zotero 设置 → 高级 → 设置编辑器配置：
 
@@ -97,7 +87,7 @@ npm run build
 npm run check
 ```
 
-产物：`dist/orange-translate-1.1.0.xpi`。构建工具不需要安装到 Zotero；运行翻译时使用所选本地环境。
+产物为 `dist/orange-translate-1.2.0.xpi`。在 Zotero 的插件管理器里选择该文件安装。
 
 ## 许可证
 

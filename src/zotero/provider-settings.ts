@@ -180,7 +180,7 @@ export function mountProviderSettings(host: any): void {
   let busy = false;
   const errors: Record<string, string> = { SECRET_STORE_UNAVAILABLE: 'Zotero 密码存储暂不可用，未把 Key 写入普通配置。', INVALID_API_KEY: '请填写有效 Key。',
     RUNTIME_MISSING: '此目录不是可用翻译环境，请选择包含 runtime/python 和 runtime/libs 的根目录。',
-    INSTALL_UNSUPPORTED: '自动安装目前支持 Windows x64。', INSTALL_BUSY: '已有环境安装正在进行。',
+    INSTALL_UNSUPPORTED: '自动安装目前支持 Windows x64 和 Apple Silicon Mac。', INSTALL_BUSY: '已有环境安装正在进行。',
     INSTALL_DIR_UNOWNED: '该位置的 OrangeTranslateRuntime 文件夹已包含其他内容，请换一个安装位置。',
     DOWNLOAD_FAILED: '下载失败，请检查网络后重试。', DOWNLOAD_HASH_MISMATCH: '下载文件校验失败，请重新安装。',
     PYTHON_INSTALL_FAILED: 'Python 下载或安装失败，请检查网络和空间后重试。',

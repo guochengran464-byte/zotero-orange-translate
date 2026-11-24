@@ -1,15 +1,19 @@
-import { RUNTIME_INSTALL_SCRIPT } from '../runtime/runtime-install.ts';
-import { adaptZoteroProcess } from './subprocess-host.ts';
+import { MAC_RUNTIME_INSTALL_SCRIPT, RUNTIME_INSTALL_SCRIPT } from '../runtime/runtime-install.ts';
+import { startMacProcess } from './macos-process.ts';
+import { adaptZoteroProcess, type ZoteroPipeProcess } from './subprocess-host.ts';
 
 const ROOT_PREF = 'extensions.orange-translate.runtimeRoot';
-let installing: any = null;
+let installing: { process: ZoteroPipeProcess | null; cancelled: boolean } | null = null;
 
 export function resolveRuntime(host: any, root = host.Services.prefs.getStringPref(ROOT_PREF, '')): { root: string; python: string; libs: string; models: string } {
   if (!root) { throw new Error('RUNTIME_MISSING'); }
   const join = host.PathUtils.join;
   const exists = (path: string) => { const file = host.Zotero.File.pathToFile(path); return file.exists() && file.isFile(); };
   if (exists(join(root, '.orange-translate-runtime.json')) && !exists(join(root, 'ready.json'))) { throw new Error('RUNTIME_MISSING'); }
-  const python = [join(root, 'runtime', 'python', 'python.exe'), join(root, 'runtime', 'python', 'Scripts', 'python.exe')].find(exists);
+  const pythonPaths = host.Services.appinfo?.OS === 'Darwin'
+    ? [join(root, 'runtime', 'python', 'bin', 'python')]
+    : [join(root, 'runtime', 'python', 'python.exe'), join(root, 'runtime', 'python', 'Scripts', 'python.exe')];
+  const python = pythonPaths.find(exists);
   const libs = join(root, 'runtime', 'libs');
   if (!python || !exists(join(libs, 'pdf2zh_next', 'main.py')) || !exists(join(libs, 'babeldoc', '__init__.py'))) { throw new Error('RUNTIME_MISSING'); }
   const models = join(root, 'models', 'babeldoc');
@@ -37,26 +41,15 @@ export async function cancelRuntimeSetup(): Promise<void> {
 
 export async function installRuntime(host: any, update: (text: string) => void): Promise<string | null> {
   if (installing) { throw new Error('INSTALL_BUSY'); }
-  if (host.Services.appinfo.OS !== 'WINNT' || !/x86_64|amd64/i.test(host.Services.appinfo.XPCOMABI)) { throw new Error('INSTALL_UNSUPPORTED'); }
+  const { OS, XPCOMABI } = host.Services.appinfo;
+  const mac = OS === 'Darwin';
+  const supported = mac ? /^(aarch64|arm64)(-|$)/i.test(XPCOMABI) : OS === 'WINNT' && /x86_64|amd64/i.test(XPCOMABI);
+  if (!supported) { throw new Error('INSTALL_UNSUPPORTED'); }
   const parent = await pickFolder(host, '选择安装位置：将在其中创建 OrangeTranslateRuntime 文件夹');
   if (!parent) { return null; }
+  if (installing) { throw new Error('INSTALL_BUSY'); }
   const root = host.PathUtils.join(parent, 'OrangeTranslateRuntime');
-  const marker = host.PathUtils.join(root, '.orange-translate-runtime.json');
-  const folder = host.Zotero.File.pathToFile(root);
-  if (folder.exists() && !folder.isDirectory()) { throw new Error('INSTALL_DIR_UNOWNED'); }
-  if (folder.exists() && folder.directoryEntries.hasMoreElements()) {
-    let owned: any;
-    try { owned = JSON.parse(await host.IOUtils.readUTF8(marker)); } catch {}
-    if (owned?.app !== 'Orange Translate' || owned?.schemaVersion !== 1) { throw new Error('INSTALL_DIR_UNOWNED'); }
-  }
-  await host.IOUtils.makeDirectory(root, { createAncestors: true, ignoreExisting: true });
-  for (const name of ['temp', 'cache', 'local-app-data', 'roaming-app-data']) {
-    await host.IOUtils.makeDirectory(host.PathUtils.join(root, name), { ignoreExisting: true });
-  }
-  await host.IOUtils.writeUTF8(marker, JSON.stringify({ app: 'Orange Translate', schemaVersion: 1 }));
-  const script = host.PathUtils.join(root, 'install-runtime.ps1');
-  await host.IOUtils.writeUTF8(script, RUNTIME_INSTALL_SCRIPT);
-  const job = { process: null as any, cancelled: false };
+  const job = { process: null as ZoteroPipeProcess | null, cancelled: false };
   installing = job;
   const stop = () => { void cancelRuntimeSetup(); };
   host.win.addEventListener('unload', stop, { once: true });
@@ -69,9 +62,29 @@ export async function installRuntime(host: any, update: (text: string) => void):
   let timedOut = false;
   const timer = host.win.setTimeout(() => { timedOut = true; void cancelRuntimeSetup(); }, 45 * 60_000);
   try {
+    const marker = host.PathUtils.join(root, '.orange-translate-runtime.json');
+    const folder = host.Zotero.File.pathToFile(root);
+    if (folder.exists() && !folder.isDirectory()) { throw new Error('INSTALL_DIR_UNOWNED'); }
+    if (folder.exists() && folder.directoryEntries.hasMoreElements()) {
+      let owned: any;
+      try { owned = JSON.parse(await host.IOUtils.readUTF8(marker)); } catch {}
+      if (owned?.app !== 'Orange Translate' || owned?.schemaVersion !== 1) { throw new Error('INSTALL_DIR_UNOWNED'); }
+    }
+    await host.IOUtils.makeDirectory(root, { createAncestors: true, ignoreExisting: true });
+    if (!mac) {
+      for (const name of ['temp', 'cache', 'local-app-data', 'roaming-app-data']) {
+        await host.IOUtils.makeDirectory(host.PathUtils.join(root, name), { ignoreExisting: true });
+      }
+    }
+    await host.IOUtils.writeUTF8(marker, JSON.stringify({ app: 'Orange Translate', schemaVersion: 1 }));
+    const script = host.PathUtils.join(root, mac ? 'install-runtime.sh' : 'install-runtime.ps1');
+    await host.IOUtils.writeUTF8(script, mac ? MAC_RUNTIME_INSTALL_SCRIPT : RUNTIME_INSTALL_SCRIPT);
+    if (job.cancelled) { throw new Error(timedOut ? 'INSTALL_TIMEOUT' : 'INSTALL_CANCELLED'); }
     update('正在准备安装：' + root + '\n请保持设置窗口打开，首次需要联网下载。');
     const native = host.ChromeUtils.importESModule('resource://gre/modules/Subprocess.sys.mjs').Subprocess;
-    job.process = await native.call({
+    const child = mac ? await startMacProcess(native, {
+      command: '/bin/bash', arguments: [script, root], workdir: root, stderr: 'pipe',
+    }) : await native.call({
       command: host.Services.env.get('SystemRoot') + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
       arguments: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Root', root],
       workdir: root, stderr: 'pipe',
@@ -82,9 +95,10 @@ export async function installRuntime(host: any, update: (text: string) => void):
         PSModuleAnalysisCachePath: host.PathUtils.join(root, 'cache', 'powershell-module-cache'),
       },
     });
-    await job.process.stdin?.close();
-    if (job.cancelled) { await job.process.kill(0); }
-    const process = adaptZoteroProcess(job.process);
+    job.process = child;
+    await child.stdin?.close();
+    if (job.cancelled) { await child.kill(0); }
+    const process = adaptZoteroProcess(child);
     const read = async (pipe: any, stdout: boolean) => {
       if (!pipe) { return; }
       let pending = '';

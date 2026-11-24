@@ -1,0 +1,1 @@
+ac84c1147a7f6514f99fe6468e08bd399323c980de17160e4fcabdd3fc766180  orange-translate-1.2.0.xpi

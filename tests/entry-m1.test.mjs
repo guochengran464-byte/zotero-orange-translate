@@ -11,7 +11,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -25,7 +25,9 @@ var REASON = { APP_STARTUP: 1, APP_SHUTDOWN: 2, ADDON_ENABLE: 3, ADDON_DISABLE: 
 
 /** Build the real bundle once per test run (deterministic, into .local/tmp). */
 function buildBundle() {
-  var tmp = mkdtempSync(path.join(ROOT, '.local', 'tmp', 'e2e-'));
+  var base = path.join(ROOT, '.local', 'tmp');
+  mkdirSync(base, { recursive: true });
+  var tmp = mkdtempSync(path.join(base, 'e2e-'));
   var out = path.join(tmp, 'probe.xpi');
   execFileSync(process.execPath, [
     path.join(ROOT, 'scripts', 'build.mjs'),
@@ -175,6 +177,7 @@ function makeHarness(options) {
       },
     },
     Services: {
+      appinfo: { OS: 'WINNT', XPCOMABI: 'x86_64-msvc' },
       uuid: { generateUUID: () => '{11111111-1111-4111-8111-111111111111}' },
       env: { get: function () { return 'C:\\Windows'; } },
       prefs: {

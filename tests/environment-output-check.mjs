@@ -59,8 +59,14 @@ assert.equal(resolveRuntime(host, runtime).python, path.join(runtime, 'runtime/p
 writeFileSync(path.join(runtime, '.orange-translate-runtime.json'), '{}');
 assert.throws(() => resolveRuntime(host, runtime), /RUNTIME_MISSING/);
 writeFileSync(path.join(runtime, 'ready.json'), '{}'); assert.equal(resolveRuntime(host, runtime).root, runtime);
+const macHost = { ...host, Services: { ...host.Services, appinfo: { OS: 'Darwin', XPCOMABI: 'aarch64-gcc3' } } };
+assert.throws(() => resolveRuntime(macHost, runtime), /RUNTIME_MISSING/);
+mkdirSync(path.join(runtime, 'runtime/python/bin'));
+writeFileSync(path.join(runtime, 'runtime/python/bin/python'), 'fake');
+assert.equal(resolveRuntime(macHost, runtime).python, path.join(runtime, 'runtime/python/bin/python'));
 const unrelated = path.join(root, 'OrangeTranslateRuntime'); mkdirSync(unrelated); writeFileSync(path.join(unrelated, 'keep.txt'), 'keep');
 host.ChromeUtils = { importESModule: () => ({ FilePicker: class { modeGetFolder = 2; returnOK = 0; file = root; init() {} async show() { return 0; } } }) };
+host.win = { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout };
 host.IOUtils.readUTF8 = async p => readFileSync(p, 'utf8');
 await assert.rejects(installRuntime(host, () => {}), /INSTALL_DIR_UNOWNED/);
 assert.equal(readFileSync(path.join(unrelated, 'keep.txt'), 'utf8'), 'keep');
